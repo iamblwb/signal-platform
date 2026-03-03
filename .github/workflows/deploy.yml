@@ -1,0 +1,25 @@
+name: Deploy signal.iamblwb.com
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /home/albert/signal-platform
+            git pull origin main
+            cp frontend/index.html /var/www/signal.iamblwb.com/index.html
+            systemctl --user restart signal-platform
+            sleep 3
+            curl -sf http://127.0.0.1:8006/health && echo "✅ Deploy OK"

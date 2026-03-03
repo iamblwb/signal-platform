@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIGNAL INTELLIGENCE TERMINAL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #030712;
+    --surface: rgba(0, 255, 136, 0.03);
+    --border: rgba(0, 255, 136, 0.15);
+    --green: #00ff88;
+    --green-dim: rgba(0, 255, 136, 0.6);
+    --red: #ff3860;
+    --red-dim: rgba(255, 56, 96, 0.6);
+    --yellow: #ffcc00;
+    --blue: #00b4ff;
+    --muted: rgba(0, 255, 136, 0.35);
+    --text: #c8fce8;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Matrix rain canvas */
+  #matrix-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    opacity: 0.03;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Scanline overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 255, 136, 0.01) 2px,
+      rgba(0, 255, 136, 0.01) 4px
+    );
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .wrap {
+    position: relative;
+    z-index: 2;
+    max-width: 1300px;
+    margin: 0 auto;
+    padding: 0 20px 60px;
+  }
+
+  /* ── HEADER ── */
+  .terminal-header {
+    border-bottom: 1px solid var(--border);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(0, 255, 136, 0.02);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    backdrop-filter: blur(10px);
+  }
+
+  .terminal-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--green);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .terminal-title::before {
+    content: '▶';
+    color: var(--green);
+    animation: blink 1.2s step-end infinite;
+  }
+
+  .cursor {
+    display: inline-block;
+    width: 10px;
+    height: 16px;
+    background: var(--green);
+    margin-left: 6px;
+    animation: blink 1s step-end infinite;
+    vertical-align: middle;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .terminal-meta {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse-dot 2s ease-in-out infinite;
+    display: inline-block;
+    margin-right: 6px;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--green); }
+    50% { opacity: 0.5; box-shadow: 0 0 4px var(--green); }
+  }
+
+  #live-time { color: var(--green); font-weight: 600; }
+
+  /* ── GRID ── */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-top: 24px;
+  }
+
+  .grid-2 {
+    grid-column: span 2;
+  }
+
+  .grid-full {
+    grid-column: 1 / -1;
+  }
+
+  /* ── CARD ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 20px;
+    position: relative;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .card::before,
+  .card::after {
+    content: '';
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-color: var(--green);
+    border-style: solid;
+    opacity: 0.5;
+  }
+  .card::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+  .card::after  { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+
+  .card:hover {
+    border-color: rgba(0, 255, 136, 0.4);
+    background: rgba(0, 255, 136, 0.05);
+  }
+
+  .card-label {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-label::before {
+    content: '//';
+    color: var(--green);
+    opacity: 0.6;
+  }
+
+  /* ── PRICE CARD ── */
+  .price-symbol {
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 4px;
+    letter-spacing: 0.1em;
+  }
+
+  .price-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--green);
+    line-height: 1;
+    margin-bottom: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .price-change {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 2px;
+    display: inline-block;
+  }
+
+  .price-change.up {
+    color: var(--green);
+    background: rgba(0, 255, 136, 0.1);
+  }
+
+  .price-change.down {
+    color: var(--red);
+    background: rgba(255, 56, 96, 0.1);
+  }
+
+  .price-vol {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+
+  /* ── FEAR & GREED ── */
+  .gauge-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 0;
+  }
+
+  .gauge-svg {
+    width: 200px;
+    height: 120px;
+  }
+
+  .gauge-value {
+    font-size: 48px;
+    font-weight: 700;
+    text-align: center;
+    margin-top: -10px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .gauge-label {
+    font-size: 12px;
+    text-align: center;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  .gauge-scale {
+    display: flex;
+    justify-content: space-between;
+    width: 200px;
+    font-size: 9px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+
+  /* ── RSI / MACD ── */
+  .indicator-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(0, 255, 136, 0.08);
+  }
+
+  .indicator-row:last-child { border-bottom: none; }
+
+  .indicator-name {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+
+  .indicator-value {
+    font-size: 18px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .signal-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 2px;
+    letter-spacing: 0.05em;
+  }
+
+  .signal-badge.bullish {
+    color: var(--green);
+    background: rgba(0, 255, 136, 0.1);
+    border: 1px solid rgba(0, 255, 136, 0.3);
+  }
+
+  .signal-badge.bearish {
+    color: var(--red);
+    background: rgba(255, 56, 96, 0.1);
+    border: 1px solid rgba(255, 56, 96, 0.3);
+  }
+
+  .signal-badge.neutral {
+    color: var(--yellow);
+    background: rgba(255, 204, 0, 0.1);
+    border: 1px solid rgba(255, 204, 0, 0.3);
+  }
+
+  .rsi-bar {
+    width: 100%;
+    height: 6px;
+    background: rgba(0, 255, 136, 0.1);
+    border-radius: 3px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+
+  .rsi-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 1s ease;
+  }
+
+  /* ── AI REPORT ── */
+  .report-content {
+    font-size: 12px;
+    line-height: 1.8;
+    color: var(--text);
+    white-space: pre-wrap;
+  }
+
+  .report-meta {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid rgba(0, 255, 136, 0.08);
+    padding-top: 12px;
+  }
+
+  .report-refresh {
+    font-size: 10px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .confidence-bar {
+    width: 100%;
+    height: 4px;
+    background: rgba(0, 255, 136, 0.1);
+    border-radius: 2px;
+    margin-top: 4px;
+    overflow: hidden;
+  }
+
+  .confidence-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--blue), var(--green));
+    border-radius: 2px;
+    transition: width 1s ease;
+  }
+
+  /* ── WHALES ── */
+  .whale-row {
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(0, 255, 136, 0.08);
+  }
+
+  .whale-row:last-child { border-bottom: none; }
+
+  .whale-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+
+  .whale-type {
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    padding: 2px 8px;
+    border-radius: 1px;
+  }
+
+  .whale-type.bearish {
+    color: var(--red);
+    border: 1px solid rgba(255, 56, 96, 0.4);
+  }
+
+  .whale-type.bullish {
+    color: var(--green);
+    border: 1px solid rgba(0, 255, 136, 0.4);
+  }
+
+  .whale-type.neutral {
+    color: var(--yellow);
+    border: 1px solid rgba(255, 204, 0, 0.4);
+  }
+
+  .whale-amount {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--yellow);
+  }
+
+  .whale-route {
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .whale-usd {
+    font-size: 11px;
+    color: var(--text);
+    margin-top: 2px;
+  }
+
+  .whale-age {
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  /* ── TRENDING ── */
+  .trending-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(0, 255, 136, 0.08);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .trending-row:last-child { border-bottom: none; }
+
+  .trending-rank {
+    font-size: 12px;
+    color: var(--muted);
+    width: 20px;
+    text-align: center;
+  }
+
+  .trending-name {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .trending-symbol {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 1px;
+    letter-spacing: 0.05em;
+  }
+
+  .trending-mcap {
+    font-size: 10px;
+    color: var(--blue);
+    text-align: right;
+  }
+
+  /* ── LOADING ── */
+  .loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .loading::before {
+    content: '⟳';
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  /* ── SECTION HEADER ── */
+  .section-header {
+    grid-column: 1 / -1;
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    color: var(--muted);
+    text-transform: uppercase;
+    padding: 20px 0 4px;
+    border-bottom: 1px solid rgba(0, 255, 136, 0.08);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .section-header::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(0,255,136,0.15), transparent);
+  }
+
+  /* ── DISCLAIMER ── */
+  .disclaimer {
+    font-size: 9px;
+    color: rgba(0, 255, 136, 0.2);
+    text-align: center;
+    margin-top: 40px;
+    padding: 20px;
+    border-top: 1px solid rgba(0, 255, 136, 0.06);
+    letter-spacing: 0.05em;
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: repeat(2, 1fr); }
+    .grid-2 { grid-column: span 2; }
+    .grid-full { grid-column: 1 / -1; }
+  }
+
+  @media (max-width: 600px) {
+    .grid { grid-template-columns: 1fr; }
+    .grid-2, .grid-full { grid-column: 1; }
+    .terminal-meta { display: none; }
+  }
+
+  /* ── GLITCH EFFECT ── */
+  @keyframes glitch {
+    0% { clip-path: polygon(0 2%, 100% 2%, 100% 5%, 0 5%); transform: translate(-2px); }
+    20% { clip-path: polygon(0 78%, 100% 78%, 100% 82%, 0 82%); transform: translate(2px); }
+    40% { clip-path: polygon(0 44%, 100% 44%, 100% 46%, 0 46%); transform: translate(-1px); }
+    60% { clip-path: none; transform: none; }
+    100% { clip-path: none; transform: none; }
+  }
+
+  .terminal-title:hover {
+    animation: glitch 0.3s ease;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: rgba(0,255,136,0.3); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<canvas id="matrix-canvas"></canvas>
+
+<!-- HEADER -->
+<div class="terminal-header">
+  <div class="terminal-title">
+    SIGNAL INTELLIGENCE TERMINAL<span class="cursor"></span>
+  </div>
+  <div class="terminal-meta">
+    <span><span class="status-dot"></span>SYSTEM ONLINE</span>
+    <span>UTC <span id="live-time">--:--:--</span></span>
+    <span>VER 1.0.0</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="grid">
+
+    <!-- SECTION: 市場概覽 -->
+    <div class="section-header">◈ MARKET OVERVIEW — 市場概覽</div>
+
+    <!-- BTC -->
+    <div class="card" id="card-btc">
+      <div class="card-label">BTC/USDT</div>
+      <div class="price-symbol">Bitcoin</div>
+      <div class="price-value" id="btc-price"><span class="loading">載入中</span></div>
+      <div id="btc-change"></div>
+      <div class="price-vol" id="btc-vol"></div>
+    </div>
+
+    <!-- ETH -->
+    <div class="card" id="card-eth">
+      <div class="card-label">ETH/USDT</div>
+      <div class="price-symbol">Ethereum</div>
+      <div class="price-value" id="eth-price"><span class="loading">載入中</span></div>
+      <div id="eth-change"></div>
+      <div class="price-vol" id="eth-vol"></div>
+    </div>
+
+    <!-- SOL -->
+    <div class="card" id="card-sol">
+      <div class="card-label">SOL/USDT</div>
+      <div class="price-symbol">Solana</div>
+      <div class="price-value" id="sol-price"><span class="loading">載入中</span></div>
+      <div id="sol-change"></div>
+      <div class="price-vol" id="sol-vol"></div>
+    </div>
+
+    <!-- BNB -->
+    <div class="card" id="card-bnb">
+      <div class="card-label">BNB/USDT</div>
+      <div class="price-symbol">BNB</div>
+      <div class="price-value" id="bnb-price"><span class="loading">載入中</span></div>
+      <div id="bnb-change"></div>
+      <div class="price-vol" id="bnb-vol"></div>
+    </div>
+
+    <!-- SECTION: 情緒與技術指標 -->
+    <div class="section-header">◈ INDICATORS — 情緒與技術指標</div>
+
+    <!-- FEAR & GREED -->
+    <div class="card grid-2">
+      <div class="card-label">FEAR & GREED INDEX — 市場恐貪指數</div>
+      <div class="gauge-wrap" id="fg-wrap">
+        <div class="loading">載入中</div>
+      </div>
+    </div>
+
+    <!-- RSI + MACD -->
+    <div class="card grid-2">
+      <div class="card-label">TECHNICAL SIGNALS — 技術指標</div>
+      <div id="indicators-wrap">
+        <div class="loading">載入中</div>
+      </div>
+    </div>
+
+    <!-- SECTION: AI REPORT -->
+    <div class="section-header">◈ AI INTELLIGENCE — Gemini 市場預測報告</div>
+
+    <div class="card grid-full" id="ai-report-card">
+      <div class="card-label">CLASSIFIED: AI ANALYSIS REPORT<span style="color:var(--red);margin-left:12px;">● LIVE</span></div>
+      <div id="ai-report-wrap">
+        <div class="loading">正在連線 Gemini 情報中心...</div>
+      </div>
+    </div>
+
+    <!-- SECTION: 鯨魚 + 熱門 -->
+    <div class="section-header">◈ WHALE ALERTS & TRENDING — 鯨魚警報 & 熱門幣種</div>
+
+    <!-- WHALES -->
+    <div class="card grid-2">
+      <div class="card-label">WHALE RADAR — 大戶動向追蹤<span style="color:var(--muted);margin-left:8px;">⚠ SIMULATED</span></div>
+      <div id="whale-wrap">
+        <div class="loading">掃描鏈上資料...</div>
+      </div>
+    </div>
+
+    <!-- TRENDING -->
+    <div class="card grid-2">
+      <div class="card-label">TRENDING COINS — CoinGecko 熱門排行</div>
+      <div id="trending-wrap">
+        <div class="loading">連線 CoinGecko...</div>
+      </div>
+    </div>
+
+  </div><!-- /grid -->
+
+  <div class="disclaimer">
+    ⚠ DISCLAIMER: 本站資訊僅供參考，不構成投資建議。加密貨幣投資有極高風險，請自行判斷。Whale alerts are simulated for demonstration purposes.
+  </div>
+</div><!-- /wrap -->
+
+<script>
+// ── Matrix Rain ──
+(function() {
+  const canvas = document.getElementById('matrix-canvas');
+  const ctx = canvas.getContext('2d');
+  const chars = '01アイウエオカキクケコサシスセソタチツテトナニヌネノ'.split('');
+  let drops = [];
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    drops = Array(Math.floor(canvas.width / 14)).fill(1);
+  }
+
+  resize();
+  window.addEventListener('resize', resize);
+
+  setInterval(() => {
+    ctx.fillStyle = 'rgba(3,7,18,0.05)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#00ff88';
+    ctx.font = '12px JetBrains Mono, monospace';
+    drops.forEach((y, i) => {
+      const char = chars[Math.floor(Math.random() * chars.length)];
+      ctx.fillText(char, i * 14, y * 14);
+      if (y * 14 > canvas.height && Math.random() > 0.975) drops[i] = 0;
+      drops[i]++;
+    });
+  }, 60);
+})();
+
+// ── Live Clock ──
+function updateClock() {
+  const now = new Date();
+  document.getElementById('live-time').textContent = now.toUTCString().split(' ')[4];
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ── API Base ──
+const API = '';
+
+// ── Format number ──
+function fmt(n, dec=2) {
+  if (n >= 1e9) return (n/1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
+  return n.toFixed(dec);
+}
+
+function fmtPrice(p) {
+  if (p >= 1000) return '$' + p.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  return '$' + p.toFixed(4);
+}
+
+// ── Prices ──
+async function loadPrices() {
+  try {
+    const r = await fetch(API + '/api/prices');
+    const data = await r.json();
+    const map = {BTCUSDT:'btc', ETHUSDT:'eth', SOLUSDT:'sol', BNBUSDT:'bnb'};
+    data.forEach(d => {
+      const k = map[d.symbol];
+      if (!k) return;
+      const up = d.change >= 0;
+      document.getElementById(k+'-price').textContent = fmtPrice(d.price);
+      document.getElementById(k+'-price').style.color = up ? 'var(--green)' : 'var(--red)';
+      document.getElementById(k+'-change').innerHTML =
+        `<span class="price-change ${up?'up':'down'}">${up?'▲':'▼'} ${Math.abs(d.change).toFixed(2)}%</span>`;
+      document.getElementById(k+'-vol').textContent = `VOL 24H: $${fmt(d.volume)}`;
+    });
+  } catch(e) {
+    console.error('prices error:', e);
+  }
+}
+
+// ── Fear & Greed ──
+function fgColor(v) {
+  if (v <= 25) return '#ff3860';
+  if (v <= 45) return '#ff8c00';
+  if (v <= 55) return '#ffcc00';
+  if (v <= 75) return '#7fff00';
+  return '#00ff88';
+}
+
+function fgLabel(v) {
+  if (v <= 25) return '極度恐慌';
+  if (v <= 45) return '恐慌';
+  if (v <= 55) return '中性';
+  if (v <= 75) return '貪婪';
+  return '極度貪婪';
+}
+
+async function loadFearGreed() {
+  try {
+    const r = await fetch(API + '/api/fear-greed');
+    const d = await r.json();
+    const v = d.value;
+    const color = fgColor(v);
+    const angle = (v / 100) * 180 - 180; // -180 to 0 degrees
+
+    // Build SVG gauge
+    const cx = 100, cy = 100, r2 = 80, sw = 14;
+    function polar(deg, rad) {
+      const a = (deg * Math.PI) / 180;
+      return [cx + rad * Math.cos(a), cy + rad * Math.sin(a)];
+    }
+
+    // Background arc
+    const [bx1, by1] = polar(180, r2);
+    const [bx2, by2] = polar(0, r2);
+
+    // Value arc
+    const endDeg = 180 + (v / 100) * 180;
+    const [vx1, vy1] = polar(180, r2);
+    const [vx2, vy2] = polar(endDeg, r2);
+    const largeArc = v >= 50 ? 1 : 0;
+
+    const svg = `
+      <svg viewBox="0 0 200 110" class="gauge-svg">
+        <!-- bg arc -->
+        <path d="M ${bx1} ${by1} A ${r2} ${r2} 0 0 1 ${bx2} ${by2}"
+          fill="none" stroke="rgba(0,255,136,0.1)" stroke-width="${sw}" stroke-linecap="round"/>
+        <!-- gradient segments -->
+        <path d="M ${vx1} ${vy1} A ${r2} ${r2} 0 ${largeArc} 1 ${vx2} ${vy2}"
+          fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round"
+          style="filter:drop-shadow(0 0 6px ${color})"/>
+        <!-- needle -->
+        <line x1="${cx}" y1="${cy}"
+          x2="${cx + 70 * Math.cos(endDeg * Math.PI/180)}"
+          y2="${cy + 70 * Math.sin(endDeg * Math.PI/180)}"
+          stroke="${color}" stroke-width="2" stroke-linecap="round"
+          style="filter:drop-shadow(0 0 4px ${color})"/>
+        <circle cx="${cx}" cy="${cy}" r="5" fill="${color}"/>
+        <!-- labels -->
+        <text x="18" y="105" fill="rgba(0,255,136,0.4)" font-size="9" font-family="JetBrains Mono,monospace">恐慌</text>
+        <text x="155" y="105" fill="rgba(0,255,136,0.4)" font-size="9" font-family="JetBrains Mono,monospace">貪婪</text>
+      </svg>
+    `;
+
+    document.getElementById('fg-wrap').innerHTML = `
+      ${svg}
+      <div class="gauge-value" style="color:${color}">${v}</div>
+      <div class="gauge-label" style="color:${color}">${fgLabel(v)}</div>
+      <div class="gauge-scale">
+        <span>0 極度恐慌</span>
+        <span>50</span>
+        <span>100 極度貪婪</span>
+      </div>
+    `;
+  } catch(e) {
+    console.error('fear greed error:', e);
+  }
+}
+
+// ── RSI / MACD ──
+async function loadIndicators() {
+  try {
+    const r = await fetch(API + '/api/rsi');
+    const d = await r.json();
+
+    const rsiClass = d.rsi > 70 ? 'bearish' : d.rsi < 30 ? 'bullish' : 'neutral';
+    const macdClass = d.macd_trend === 'bullish' ? 'bullish' : d.macd_trend === 'bearish' ? 'bearish' : 'neutral';
+    const rsiColor = d.rsi > 70 ? 'var(--red)' : d.rsi < 30 ? 'var(--green)' : 'var(--yellow)';
+
+    document.getElementById('indicators-wrap').innerHTML = `
+      <div class="indicator-row">
+        <div>
+          <div class="indicator-name">RSI (14D) — 相對強弱指數</div>
+          <div class="rsi-bar">
+            <div class="rsi-fill" style="width:${d.rsi}%;background:${rsiColor}"></div>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div class="indicator-value" style="color:${rsiColor}">${d.rsi}</div>
+          <span class="signal-badge ${rsiClass}">${d.rsi_signal}</span>
+        </div>
+      </div>
+      <div class="indicator-row">
+        <div>
+          <div class="indicator-name">MACD — 移動平均收斂散度</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:4px">
+            MACD: ${d.macd > 0 ? '+' : ''}${d.macd} | Signal: ${d.macd_signal_line > 0 ? '+' : ''}${d.macd_signal_line} | Hist: ${d.macd_histogram > 0 ? '+' : ''}${d.macd_histogram}
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div class="indicator-value" style="color:${macdClass==='bullish'?'var(--green)':macdClass==='bearish'?'var(--red)':'var(--yellow)'}">
+            ${d.macd_histogram > 0 ? '▲' : '▼'}
+          </div>
+          <span class="signal-badge ${macdClass}">${d.macd_signal}</span>
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    console.error('indicators error:', e);
+  }
+}
+
+// ── AI Report ──
+async function loadAIReport() {
+  try {
+    const r = await fetch(API + '/api/ai-report');
+    const d = await r.json();
+
+    const ts = new Date(d.timestamp * 1000);
+    const next = new Date(d.next_refresh * 1000);
+    const tsStr = ts.toUTCString().replace(' GMT', ' UTC');
+
+    // Extract confidence score from report text
+    const confMatch = d.report.match(/(\d{1,3})\s*[\/分]/);
+    const conf = confMatch ? parseInt(confMatch[1]) : 65;
+
+    document.getElementById('ai-report-wrap').innerHTML = `
+      <div style="display:flex;gap:16px;align-items:flex-start">
+        <div style="flex:1">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:12px;letter-spacing:0.1em">
+            ▶ BTC 基準價格: <span style="color:var(--green)">${fmtPrice(d.btc_price)}</span>
+            &nbsp;&nbsp;|&nbsp;&nbsp; 分析時間: ${tsStr}
+          </div>
+          <div class="report-content">${d.report}</div>
+        </div>
+        <div style="min-width:120px;border-left:1px solid rgba(0,255,136,0.1);padding-left:16px">
+          <div style="font-size:9px;color:var(--muted);letter-spacing:0.1em;margin-bottom:8px">信心分數</div>
+          <div style="font-size:36px;font-weight:700;color:var(--blue)">${conf}</div>
+          <div class="confidence-bar">
+            <div class="confidence-fill" style="width:${conf}%"></div>
+          </div>
+          <div style="font-size:9px;color:var(--muted);margin-top:8px">GEMINI POWERED</div>
+        </div>
+      </div>
+      <div class="report-meta">
+        <span>CLASSIFIED // AI-GENERATED INTELLIGENCE</span>
+        <span class="report-refresh">⟳ 下次更新: ${next.toUTCString().replace(' GMT',' UTC')}</span>
+      </div>
+    `;
+  } catch(e) {
+    document.getElementById('ai-report-wrap').innerHTML =
+      '<div style="color:var(--red);font-size:12px">⚠ 連線失敗 — 無法取得 AI 情報</div>';
+    console.error('ai report error:', e);
+  }
+}
+
+// ── Whales ──
+async function loadWhales() {
+  try {
+    const r = await fetch(API + '/api/whales');
+    const data = await r.json();
+
+    const icons = { EXCHANGE_INFLOW: '🔴', EXCHANGE_OUTFLOW: '🟢', LARGE_TRANSFER: '🟡' };
+
+    document.getElementById('whale-wrap').innerHTML = data.map(w => `
+      <div class="whale-row">
+        <div class="whale-header">
+          <span class="whale-type ${w.direction}">${icons[w.type]||'⚡'} ${w.type.replace(/_/g,' ')}</span>
+          <span class="whale-age">${w.age}</span>
+        </div>
+        <div class="whale-amount">${w.amount}</div>
+        <div class="whale-usd">${w.usd_value}</div>
+        <div class="whale-route">${w.from} → ${w.to}</div>
+      </div>
+    `).join('');
+  } catch(e) {
+    console.error('whales error:', e);
+  }
+}
+
+// ── Trending ──
+async function loadTrending() {
+  try {
+    const r = await fetch(API + '/api/trending');
+    const data = await r.json();
+
+    const trophies = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣'];
+    document.getElementById('trending-wrap').innerHTML = data.map((c, i) => `
+      <div class="trending-row">
+        <div class="trending-rank">${trophies[i]||i+1}</div>
+        <div>
+          <div class="trending-name">${c.name}</div>
+          <div class="trending-symbol">${c.symbol}</div>
+        </div>
+        <div class="trending-mcap">
+          ${c.rank ? `MCap #${c.rank}` : 'N/A'}
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    document.getElementById('trending-wrap').innerHTML =
+      '<div style="color:var(--muted);font-size:12px">⚠ CoinGecko API 暫時無法使用</div>';
+    console.error('trending error:', e);
+  }
+}
+
+// ── Initial Load ──
+async function init() {
+  await Promise.allSettled([
+    loadPrices(),
+    loadFearGreed(),
+    loadIndicators(),
+    loadAIReport(),
+    loadWhales(),
+    loadTrending(),
+  ]);
+}
+
+init();
+
+// ── Auto Refresh ──
+setInterval(loadPrices, 30000);        // 30s
+setInterval(loadFearGreed, 300000);    // 5m
+setInterval(loadIndicators, 300000);   // 5m
+setInterval(loadWhales, 120000);       // 2m
+setInterval(loadTrending, 600000);     // 10m
+</script>
+</body>
+</html>
