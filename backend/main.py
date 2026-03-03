@@ -6,7 +6,7 @@ from google import genai as google_genai
 app = FastAPI(title="Signal Intelligence API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-_genai_client = google_genai.Client(api_key="AIzaSyCRsWCPogxX25qaGV3sG_PoVFi_WGsnX0o")
+_genai_client = google_genai.Client(api_key="AIzaSyCRsWCPogxX25qaGR3sG_PoVFi_WGsnX0o")
 
 _cache = {}  # simple in-memory cache
 
