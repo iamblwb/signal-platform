@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import httpx, asyncio, time, json, os
 from google import genai as google_genai
 
-app = FastAPI(title="Signal Intelligence API")
+app = FastAPI(title="Signal Intelligence API", docs_url=None, redoc_url=None)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 _genai_client = google_genai.Client(api_key="AIzaSyCRsWCPogxX25qaGR3sG_PoVFi_WGsnX0o")
@@ -120,13 +120,49 @@ Fear & Greed 指數: {fg['data'][0]['value']} ({fg['data'][0]['value_classificat
 
 用繁體中文，簡潔有力，每點不超過2行。格式：每點以數字+. 開頭。"""
 
-    resp = _genai_client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-    result = {
-        "report": resp.text,
-        "timestamp": int(now),
-        "btc_price": float(btc["lastPrice"]),
-        "next_refresh": int(now) + 14400,
-    }
+    try:
+        resp = _genai_client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        report_text = (resp.text or "").strip()
+        if not report_text:
+            raise RuntimeError("empty ai report")
+        result = {
+            "report": report_text,
+            "timestamp": int(now),
+            "btc_price": float(btc["lastPrice"]),
+            "next_refresh": int(now) + 14400,
+            "source": "gemini",
+        }
+    except Exception:
+        # Graceful fallback so frontend never shows hard failure
+        change = float(btc["priceChangePercent"])
+        fg_value = int(fg["data"][0]["value"])
+        mood = fg["data"][0]["value_classification"]
+
+        direction = "盤整"
+        confidence = 58
+        if change > 2 and fg_value >= 55:
+            direction = "上漲"
+            confidence = 64
+        elif change < -2 and fg_value <= 45:
+            direction = "下跌"
+            confidence = 64
+
+        fallback = (
+            f"1. 市場情緒：{mood}，目前波動偏{'強' if abs(change) >= 2 else '中性'}。\n"
+            f"2. 24-72h 方向預測：{direction}（信心分數 {confidence}/100）。\n"
+            f"3. 關鍵支撐/阻力：可先觀察近 24h 高低點區間。\n"
+            f"4. 操作建議：分批進出，避免單點重倉。\n"
+            f"5. 最大風險：突發消息造成方向瞬間反轉。"
+        )
+        result = {
+            "report": fallback,
+            "timestamp": int(now),
+            "btc_price": float(btc["lastPrice"]),
+            "next_refresh": int(now) + 1800,
+            "source": "fallback",
+            "warning": "Gemini 暫時不可用，已切換備援分析",
+        }
+
     _cache["report"] = result
     _cache["report_ts"] = now
     return result
