@@ -6,7 +6,19 @@ from google import genai as google_genai
 app = FastAPI(title="Signal Intelligence API", docs_url=None, redoc_url=None)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-_genai_client = google_genai.Client(api_key="AIzaSyCRsWCPogxX25qaGR3sG_PoVFi_WGsnX0o")
+def _gemini_key():
+    # 2026-11-13：key 不再寫在程式碼裡。先讀環境變數 GEMINI_API_KEY，再讀 ~/.config/iamblwb/gemini.key
+    import os as _os
+    k = _os.environ.get("GEMINI_API_KEY", "").strip()
+    if not k:
+        p = _os.path.expanduser("~/.config/iamblwb/gemini.key")
+        if _os.path.exists(p):
+            with open(p) as f:
+                k = f.read().strip()
+    return k
+
+
+_genai_client = google_genai.Client(api_key=_gemini_key())
 
 _cache = {}  # simple in-memory cache
 
